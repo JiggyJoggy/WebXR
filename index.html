@@ -1,157 +1,67 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hello WebXR!</title>
-
-  <!-- three.js -->
-  <script src="https://unpkg.com/three@0.126.0/build/three.js"></script>
-
-  <!-- GLTFLoader for loading 3D models -->
-  <script src="https://unpkg.com/three@0.126.0/examples/js/loaders/GLTFLoader.js"></script>
+    <meta charset="utf-8">
+    <title>FGS WebAR</title>
+    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+    <script src="https://jeromeetienne.github.io/AR.js/aframe/build/aframe-ar.js"></script>
+    <script>
+      <!-- THIS MY EVENT LISTENER FOR THE URL-->
+      AFRAME.registerComponent('open-url', {
+        schema: {url: {default: ''}},
+        init: function() {
+          this.el.addEventListener('click', () => {
+            window.location.href = this.data.url;
+            event.stopPropagation();
+          });
+        }
+      });
+    </script>
 </head>
 <body>
+  <!--  THIS IS MY AIM RETICLE FOR THE CURSOR -->
+    <a-scene>
+        <!-- Camera setup allowing for look around controls -->
+        <a-camera look-controls enabled="true" position="0 1.6 0">
+            <a-cursor color="black" fuse=false ></a-cursor>
+        </a-camera>
+      
+        <!-- Softly Positioned Directional Lights -->
+        <a-light type="directional" color="#FFFFFF" intensity="0.3" position="-1 1 1"></a-light>
+        <a-light type="directional" color="#FFFFFF" intensity="0.2" position="1 1 -1"></a-light> <!-- Softly Positioned Directional Lights -->
+        <a-light type="directional" color="#FFFFFF" intensity="0.2" position="8 1 -3"></a-light>
 
-<!-- Button for activating WebXR session -->
-<button id="start-ar">Start AR</button>
-
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-  if (navigator.xr) {
-    const startButton = document.getElementById('start-ar');
-    startButton.addEventListener('click', async () => {
-      try {
-        await activateXR();
-      } catch (error) {
-        console.error('Failed to start WebXR session:', error);
-      }
-    });
-  } else {
-    console.log('WebXR not supported');
-  }
-});
-
-async function activateXR() {
-  try {
-    // Check if 'immersive-ar' is available
-    const isARSupported = await navigator.xr.isSessionSupported('immersive-ar');
-    if (!isARSupported) {
-      console.error('Immersive AR not supported');
-      return;
-    }
-
-    // Add a canvas element and initialize a WebGL context that is compatible with WebXR.
-    const canvas = document.createElement("canvas");
-    document.body.appendChild(canvas);
-    const gl = canvas.getContext("webgl", {xrCompatible: true});
-
-    // Create a new scene
-    const scene = new THREE.Scene();
-
-    // Add a directional light to the scene
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
-    directionalLight.position.set(10, 15, 10);
-    scene.add(directionalLight);
-
-    // Load 3D models using GLTFLoader
-    const loader = new THREE.GLTFLoader();
-    
-    // Load reticle model
-    let reticle;
-    loader.load("https://immersive-web.github.io/webxr-samples/media/gltf/reticle/reticle.gltf", function(gltf) {
-      reticle = gltf.scene;
-      reticle.visible = false;
-      scene.add(reticle);
-    });
-
-    // Load flower model
-    let flower;
-    loader.load("https://immersive-web.github.io/webxr-samples/media/gltf/sunflower/sunflower.gltf", function(gltf) {
-      flower = gltf.scene;
-    });
-
-    // Set up the WebGLRenderer, which handles rendering to the session's base layer.
-    const renderer = new THREE.WebGLRenderer({
-      alpha: true,
-      preserveDrawingBuffer: true,
-      canvas: canvas,
-      context: gl
-    });
-    renderer.autoClear = false;
-
-    // The API directly updates the camera matrices.
-    // Disable matrix auto updates so three.js doesn't attempt
-    // to handle the matrices independently.
-    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 10);
-    camera.matrixAutoUpdate = false;
-
-    // Initialize a WebXR session using "immersive-ar" with hit-test feature.
-    const session = await navigator.xr.requestSession("immersive-ar", {requiredFeatures: ['hit-test']});
-    session.updateRenderState({
-      baseLayer: new XRWebGLLayer(session, gl)
-    });
-
-    // A 'local' reference space has a native origin that is located
-    // near the viewer's position at the time the session was created.
-    const referenceSpace = await session.requestReferenceSpace('local');
-
-    // Create another XRReferenceSpace that has the viewer as the origin.
-    const viewerSpace = await session.requestReferenceSpace('viewer');
-    // Perform hit testing using the viewer as origin.
-    const hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
-
-    // Handle object placement on user interaction
-    session.addEventListener("select", (event) => {
-      if (flower && reticle.visible) {
-        const clone = flower.clone();
-        clone.position.copy(reticle.position);
-        scene.add(clone);
-      }
-    });
-
-    // Create a render loop that allows us to draw on the AR view and handle hit-test results.
-    const onXRFrame = (time, frame) => {
-      // Queue up the next draw request.
-      session.requestAnimationFrame(onXRFrame);
-
-      // Bind the graphics framebuffer to the baseLayer's framebuffer
-      gl.bindFramebuffer(gl.FRAMEBUFFER, session.renderState.baseLayer.framebuffer)
-
-      // Retrieve the pose of the device.
-      // XRFrame.getViewerPose can return null while the session attempts to establish tracking.
-      const pose = frame.getViewerPose(referenceSpace);
-      if (pose) {
-        // In mobile AR, we only have one view.
-        const view = pose.views[0];
-
-        const viewport = session.renderState.baseLayer.getViewport(view);
-        renderer.setSize(viewport.width, viewport.height);
-
-        // Use the view's transform matrix and projection matrix to configure the THREE.camera.
-        camera.matrix.fromArray(view.transform.matrix);
-        camera.projectionMatrix.fromArray(view.projectionMatrix);
-        camera.updateMatrixWorld(true);
-
-        // Perform hit testing
-        const hitTestResults = frame.getHitTestResults(hitTestSource);
-        if (hitTestResults.length > 0 && reticle) {
-          const hitPose = hitTestResults[0].getPose(referenceSpace);
-          reticle.visible = true;
-          reticle.position.set(hitPose.transform.position.x, hitPose.transform.position.y, hitPose.transform.position.z);
-          reticle.updateMatrixWorld(true);
-        }
-
-        // Render the scene with THREE.WebGLRenderer.
-        renderer.render(scene, camera);
-      }
-    }
-    session.requestAnimationFrame(onXRFrame);
-  } catch (error) {
-    console.error('Error activating XR:', error);
-  }
-}
-</script>
-
+        <!--FGS GITHUB BUILDING BOX-->
+        <a-box position="-5 0.5 -10" rotation="0 45 0" color="#474747" depth="2" height="10" width="2"
+               open-url="url: https://github.com/JiggyJoggy">
+          
+          <!-- MY GITHUB LOGO -->
+            <a-image src="https://cdn.glitch.global/21f5d3be-2b79-454c-a09f-6716f3648d13/GithubLogo.png?v=1711660520651"
+                     position="0 4 1.1" rotation="0 0 0" width="2" height="2">
+            </a-image>
+        </a-box>
+      
+      <a-box position="-4 0.5 -18" rotation="0 45 0" color="#6e5494" depth="2" height="10" width="2"></a-box>
+      
+      <!--LINKEDIN BUILDING-->
+        <a-box position="-8 0.5 -8" rotation="0 45 0" color="#0096FF" depth="3" height="10" width="2"
+              open-url="url: https://www.linkedin.com/in/jaggervw/">
+          
+          <!--MY LINKEDIN LOGO-->
+          <a-image src="https://cdn.glitch.global/21f5d3be-2b79-454c-a09f-6716f3648d13/LinkedInLogo.png?v=1711993614951"
+                    position="0 4 1.6" rotation="0 0 0" width="2" height="2">
+          </a-image>
+        <a-box>
+          
+        <!-- X BUILDING -->
+        <a-box position="-6 0.5 2" rotation="0 45 0" color="#CC3333" depth="3" height="10" width="2"
+              open-url="url: https://twitter.com/Jaggpegg_">
+          
+        <!--MY X LOGO-->
+          <a-image src="https://cdn.glitch.global/21f5d3be-2b79-454c-a09f-6716f3648d13/TwitterLogo.png?v=1711993531182"
+                    position="0 4 1.6" rotation="0 0 0" width="2" height="2">
+          </a-image>
+        </a-box>
+    </a-scene>
 </body>
 </html>
